@@ -9,13 +9,18 @@ router = APIRouter()
 # ✅ FIXED HASHING (no 72 byte limit)
 pwd_context = CryptContext(
     schemes=["bcrypt"],
-    deprecated="auto"
+    deprecated="auto",
+    bcrypt__rounds=10
 )
 
+
 @router.post("/signup")
-def signup(user: UserCreate):
+async def signup(user: UserCreate):
     users_ref = db.collection("users")
-    existing = users_ref.where("email", "==", user.email).stream()
+    existing = list(
+    users_ref.where("email", "==", user.email).limit(1).stream()
+)
+
 
     if list(existing):
         raise HTTPException(status_code=400, detail="User already exists")
@@ -34,7 +39,7 @@ def signup(user: UserCreate):
 
 
 @router.post("/login")
-def login(user: UserLogin):
+async def login(user: UserLogin):
     users_ref = db.collection("users")
     users = users_ref.where("email", "==", user.email).stream()
 
