@@ -1,80 +1,67 @@
-import type { AuthCredentials, AuthSession, AuthSignUp, AuthUser } from './types';
-import { clearSession, loadSession, loadUsers, saveSession, saveUsers, setProfileCompleted, setSessionStorage, toPublicUser } from './storage';
+const API_BASE = "http://127.0.0.1:8000";
 
-function now() {
-  return Date.now();
-}
+export async function signUp(data: {
+  name: string;
+  email: string;
+  password: string;
+  role: string;
+}) {
+  const res = await fetch(`${API_BASE}/auth/signup`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+  });
 
-function normalizeEmail(email: string) {
-  return email.trim().toLowerCase();
-}
-
-async function sha256Hex(input: string): Promise<string> {
-  // Browser crypto (works in Vite/React). This is NOT a secure auth system,
-  // but it's better than storing plaintext passwords for a demo.
-  const enc = new TextEncoder();
-  const data = enc.encode(input);
-  const hashBuf = await crypto.subtle.digest('SHA-256', data);
-  const bytes = Array.from(new Uint8Array(hashBuf));
-  return bytes.map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-export function getCurrentSession(): AuthSession | null {
-  return loadSession();
-}
-
-export function logout() {
-  clearSession();
-}
-
-export async function signUp(payload: AuthSignUp): Promise<AuthUser> {
-  const users = loadUsers();
-  const email = normalizeEmail(payload.email);
-  if (!payload.name.trim()) throw new Error('Name is required.');
-  if (!email) throw new Error('Email is required.');
-  if (!payload.password) throw new Error('Password is required.');
-  if (users.some((u) => u.email === email && u.role === payload.role)) {
-    throw new Error('An account already exists for this email and role.');
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "Signup failed");
   }
 
-  const passwordHash = await sha256Hex(payload.password);
-  const user = {
-    id: crypto.randomUUID(),
-    role: payload.role,
-    name: payload.name.trim(),
-    email,
-    passwordHash
-  };
-  users.push(user);
-  saveUsers(users);
-  setProfileCompleted(payload.role, email, false);
-  return toPublicUser(user);
-}
-
-export async function login(role: AuthUser['role'], creds: AuthCredentials): Promise<AuthSession> {
-  return loginWithOptions(role, creds, { rememberMe: true });
+  return await res.json();
 }
 
 export async function loginWithOptions(
-  role: AuthUser['role'],
-  creds: AuthCredentials,
-  options: { rememberMe: boolean }
-): Promise<AuthSession> {
-  const users = loadUsers();
-  const email = normalizeEmail(creds.email);
-  const passwordHash = await sha256Hex(creds.password);
+  role: string,
+  credentials: { email: string; password: string },
+  _options?: any
+) {
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      email: credentials.email,
+      password: credentials.password,
+      role,
+    }),
+  });
 
-  const match = users.find((u) => u.email === email && u.role === role);
-  if (!match || match.passwordHash !== passwordHash) {
-    throw new Error('Invalid email or password.');
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "Login failed");
   }
 
-  setSessionStorage(options.rememberMe ? 'local' : 'session');
+  const data = await res.json();
 
-  const session: AuthSession = {
-    user: toPublicUser(match),
-    createdAt: now()
-  };
-  saveSession(session);
-  return session;
+  // 🔐 Store JWT token
+  localStorage.setItem("access_token", data.access_token);
+  localStorage.setItem("user_role", data.role);
+
+  return data;
+}
+
+export function logout() {
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("user_role");
+}
+
+export function getToken() {
+  return localStorage.getItem("access_token");
+}
+
+export function getUserRole() {
+  return localStorage.getItem("user_role");
 }
